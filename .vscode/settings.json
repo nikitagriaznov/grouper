@@ -1,0 +1,23 @@
+{
+    "cSpell.words": [
+        "subarray",
+        "tempdb"
+    ],
+    "cSpell.enableFiletypes": [
+        "!c",
+        "!cpp",
+        "!csharp",
+        "!jade",
+        "!latex",
+        "!markdown",
+        "!plaintext",
+        "!python",
+        "!rust",
+        "!scala",
+        "!swift",
+        "!typescript",
+        "!typescriptreact",
+        "!yaml",
+        "sql"
+    ]
+}
