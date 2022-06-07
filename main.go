@@ -6,8 +6,6 @@ import (
 	"fmt"
 	"log"
 	"math"
-	"os"
-	"strconv"
 	"strings"
 
 	_ "github.com/lib/pq"
@@ -50,7 +48,7 @@ type single_cluster struct {
 	transactions  float32 // number of transactions in cluster
 }
 
-// Index if the map is an id of cluster
+// Index in the map is an id of cluster
 type list_of_clusters map[uint32]single_cluster
 
 func main() {
@@ -60,27 +58,38 @@ func main() {
 		error_in_previous_iteration bool
 		round                       uint32
 	)
-	for repulsion < 1 {
-		fmt.Print("Введите коэффициент R: ")
-		var temp string
-		fmt.Fscan(os.Stdin, &temp)
-		r, err := strconv.ParseFloat(temp, 32)
-		if err != nil {
-			continue
-		} else {
-			repulsion = float32(r)
-		}
-	}
+
+	// Getting R coefficient
+	//	for repulsion < 1 {
+	//		fmt.Print("Введите коэффициент R: ")
+	//		var temp string
+	//		fmt.Fscan(os.Stdin, &temp)
+	//		r, err := strconv.ParseFloat(temp, 32)
+	//		if err != nil {
+	//			continue
+	//		} else {
+	//			repulsion = float32(r)
+	//		}
+	//	}
+
+	repulsion = 2
+
+	// Import data from database, parse data, store it in to the cache
 	log.Println("Import started")
 	err := cache.pull()
-	data_has_been_changed := true
 	if err != nil {
 		log.Fatal(err)
 	}
 	log.Printf("Import success")
+
+	// Repeat categorization of data and pushing it to the database until we are making some changes
+	// To start the cycle data_has_been_changed -> true
+	data_has_been_changed := true
 	for data_has_been_changed {
 		round++
 		log.Printf("Round %v start", round)
+
+		// Find the best distribution of transactions in clusters
 		data_has_been_changed, err = cache.compute(float64(repulsion))
 		if err != nil {
 			log.Print(err)
@@ -91,6 +100,8 @@ func main() {
 				continue
 			}
 		}
+
+		// Save data to database
 		err = cache.push()
 		if err != nil {
 			log.Print(err)
@@ -114,13 +125,17 @@ func (cache *db_cache) pull() error {
 	(*cache).cluster = make(list_of_clusters)
 	(*cache).transaction = make(list_of_transactions)
 
-	// Get data from database
+	// Init db
 	db, err := sql.Open(db_driver, db_server)
 	if err != nil {
 		return err
 	}
 	defer db.Close()
+
+	// If tables is not exist - create it
 	db.Exec(query2)
+
+	// Get data from database
 	rows, err := db.Query(query)
 	if err != nil {
 		fmt.Println(err)
@@ -144,7 +159,7 @@ func (cache *db_cache) pull() error {
 			err = nil
 		}
 
-		// If cluster vas not exist -> make new one
+		// If cluster with target id is not exist -> make new one
 		// Id = 0 is invalid
 		if temp.cluster_id != 0 {
 			_, already_exist := cache.cluster[temp.cluster_id]
@@ -154,7 +169,7 @@ func (cache *db_cache) pull() error {
 			}
 		}
 
-		// Fill transaction
+		// Fill the transaction in the cache
 		_, already_exist := cache.transaction[temp.transaction_id]
 		if !already_exist {
 			temp2 := new(single_transaction)
@@ -185,7 +200,7 @@ func (cache *db_cache) pull() error {
 	return err
 }
 
-// Find the best profit
+// Categorization of data
 func (cache *db_cache) compute(repulsion float64) (bool, error) {
 	if repulsion <= 1 {
 		return false, errors.New("repulsion must be bigger than 1")
@@ -213,21 +228,26 @@ func (cache *db_cache) compute(repulsion float64) (bool, error) {
 	}
 
 	// Searching for the best profit
+	// Iterating transactions
+	// Selected transaction will be iterated with every cluster
 	for transaction_id, transaction_data := range cache.transaction {
+		var (
+			max_profit_cluster_id uint32
+			max_profit            float32
+		)
+
 		// 0 is invalid cluster. Check if it is exist
 		_, exist := cache.cluster[0]
 		if exist {
 			delete(cache.cluster, 0)
 		}
 
-		var (
-			max_profit_cluster_id uint32
-			max_profit            float32
-		)
+		// We will iterate all of the clusters assigning theirs id to target transaction
+		// Save original cluster id of selected transaction
 		original_cluster_id := transaction_data.cluster
 
 		// There is a possibility that we need to define a new cluster to maximize profit
-		// To check this case define a new cluster for the transaction
+		// To check this case define a new cluster for the selected transaction
 		// Searching for a free id...
 		for i := 1; i <= len(cache.cluster)+1; i++ {
 			_, is_exist := cache.cluster[uint32(i)]
@@ -246,6 +266,7 @@ func (cache *db_cache) compute(repulsion float64) (bool, error) {
 			max_profit_cluster_id = 1
 		}
 
+		// During debugging I had this problem. Hopi I fixed it.
 		if max_profit == float32(math.NaN()) {
 			return true, errors.New("profit counter error. divide by zero")
 		}
@@ -278,31 +299,36 @@ func (cache *db_cache) push() error {
 		changes_qty                uint32
 	)
 
-	executeQuery := func(query ...string) (uint32, error) {
+	// Input form is queries separated by commas
+	// like "UPDATE a SET b=1 WHERE c=2; UPDATE a SET b=3 WHERE c=4;", "DELETE FROM a WHERE c=2;"
+	executeQuery := func(query ...string) error {
 		var grand_query string
+		for _, temp := range query {
+			if temp == "" {
+				continue
+			}
+			temp = strings.TrimSuffix(temp, ";")
+			grand_query += strings.TrimSuffix(temp, ";\n")
+			grand_query += ";\n"
+		}
+		grand_query = strings.TrimSuffix(grand_query, ";\n;")
 		db, err := sql.Open(db_driver, db_server)
 		if err != nil {
-			return 0, err
+			return err
 		}
 		defer db.Close()
-		for _, temp := range query {
-			grand_query += temp
-		}
-		result, err := db.Exec(grand_query)
-		if err != nil {
-			return 0, err
-		}
-		affected_rows_qty, err := result.RowsAffected()
-		return uint32(affected_rows_qty), err
+		_, err = db.Exec(grand_query)
+		return err
 	}
 
-	// Getting the list of transactions that should be updated
-	// Preparing SQL query for updating transaction id
 	db, err := sql.Open(db_driver, db_server)
 	if err != nil {
 		return err
 	}
 	defer db.Close()
+
+	// Getting the list of transactions that should be updated
+	// Preparing SQL query for updating transaction id
 	rows, err := db.Query("SELECT DISTINCT id, cluster_id FROM transactions")
 	if err != nil {
 		return err
@@ -353,7 +379,7 @@ func (cache *db_cache) push() error {
 	fmt.Print(clusters_to_be_deleted)
 	fmt.Print(clusters_to_be_created)
 	fmt.Print(transactions_to_be_updated)
-	_, err = executeQuery(clusters_to_be_deleted, clusters_to_be_created, transactions_to_be_updated)
+	err = executeQuery(clusters_to_be_deleted, clusters_to_be_created, transactions_to_be_updated)
 
 	return err
 }
@@ -361,11 +387,13 @@ func (cache *db_cache) push() error {
 // Count properties of clusters
 func (cache *db_cache) updateClusters() {
 	for cluster_id, cluster_data := range cache.cluster {
+		// Cluster id = 0 is invalid
 		if cluster_id == 0 {
 			delete(cache.cluster, cluster_id)
 		} else {
-			var array_of_object_lists []list_of_objects
+			var array_of_object_lists []list_of_objects // it stores all objects of cluster
 			var transaction_counter float32
+			// Iterating transactions to find ones that belong to selected cluster
 			for _, transaction_data := range cache.transaction {
 				if transaction_data.cluster == cluster_id {
 					transaction_counter++
@@ -384,6 +412,7 @@ func (cache *db_cache) updateCluster(id uint32) {
 	temp := cache.cluster[id]
 	var array_of_object_lists []list_of_objects
 	var transaction_counter float32
+	// Iterating transactions to find ones that belong to selected cluster
 	for _, temp2 := range cache.transaction {
 		if temp2.cluster == id {
 			transaction_counter++
@@ -417,10 +446,13 @@ func (cache *db_cache) setClusterId(cluster_id uint32, transaction_id uint32) er
 	}
 
 	// Write cluster id into transaction
-	{
+	// Transaction_id = 0 is invalid
+	if transaction_id != 0 {
 		temp := cache.transaction[transaction_id]
 		temp.cluster = cluster_id
 		cache.transaction[transaction_id] = temp
+	} else {
+		return errors.New("invalid transaction id")
 	}
 
 	// Update additional information about clusters
