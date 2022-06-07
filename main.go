@@ -6,6 +6,8 @@ import (
 	"fmt"
 	"log"
 	"math"
+	"os"
+	"strconv"
 	"strings"
 
 	_ "github.com/lib/pq"
@@ -60,19 +62,17 @@ func main() {
 	)
 
 	// Getting R coefficient
-	//	for repulsion < 1 {
-	//		fmt.Print("Введите коэффициент R: ")
-	//		var temp string
-	//		fmt.Fscan(os.Stdin, &temp)
-	//		r, err := strconv.ParseFloat(temp, 32)
-	//		if err != nil {
-	//			continue
-	//		} else {
-	//			repulsion = float32(r)
-	//		}
-	//	}
-
-	repulsion = 2
+	for repulsion < 1 {
+		fmt.Print("Введите коэффициент R: ")
+		var temp string
+		fmt.Fscan(os.Stdin, &temp)
+		r, err := strconv.ParseFloat(temp, 32)
+		if err != nil {
+			continue
+		} else {
+			repulsion = float32(r)
+		}
+	}
 
 	// Import data from database, parse data, store it in to the cache
 	log.Println("Import started")
