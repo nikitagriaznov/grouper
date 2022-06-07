@@ -6,9 +6,17 @@ import (
 	"fmt"
 	"log"
 	"math"
+	"os"
+	"strconv"
 	"strings"
 
 	_ "github.com/lib/pq"
+)
+
+// Database settings
+const (
+	db_server string = "postgres://test:test@localhost:5432/test?sslmode=disable"
+	db_driver string = "postgres"
 )
 
 // To avoid multiple requests to database local cache will be used
@@ -45,14 +53,6 @@ type single_cluster struct {
 // Index if the map is an id of cluster
 type list_of_clusters map[uint32]single_cluster
 
-// Database consists of some information about db and methods to get or put some data
-const (
-	db_server string = "postgres://test:test@localhost:5432/test?sslmode=disable"
-	db_driver string = "postgres"
-)
-
-// The db that we will use
-
 func main() {
 	var (
 		cache                       db_cache
@@ -60,7 +60,17 @@ func main() {
 		error_in_previous_iteration bool
 		round                       uint32
 	)
-	repulsion = 30
+	for repulsion < 1 {
+		fmt.Print("Введите коэффициент R: ")
+		var temp string
+		fmt.Fscan(os.Stdin, &temp)
+		r, err := strconv.ParseFloat(temp, 32)
+		if err != nil {
+			continue
+		} else {
+			repulsion = float32(r)
+		}
+	}
 	log.Println("Import started")
 	err := cache.pull()
 	data_has_been_changed := true
@@ -218,7 +228,7 @@ func (cache *db_cache) compute(repulsion float64) (bool, error) {
 		// There is a possibility that we need to define a new cluster to maximize profit
 		// To check this case define a new cluster for the transaction
 		// Searching for a free id...
-		for i := 1; i < len(cache.cluster)+1; i++ {
+		for i := 1; i <= len(cache.cluster)+1; i++ {
 			_, is_exist := cache.cluster[uint32(i)]
 			if !is_exist {
 				cache.setClusterId(uint32(i), transaction_id)
@@ -254,7 +264,6 @@ func (cache *db_cache) compute(repulsion float64) (bool, error) {
 			was_changed = true
 			cache.setClusterId(max_profit_cluster_id, transaction_id)
 		}
-		fmt.Println(max_profit)
 	}
 	return was_changed, nil
 }
@@ -343,8 +352,7 @@ func (cache *db_cache) push() error {
 	fmt.Print(clusters_to_be_deleted)
 	fmt.Print(clusters_to_be_created)
 	fmt.Print(transactions_to_be_updated)
-	affected_rows_qty, err := executeQuery(clusters_to_be_deleted, clusters_to_be_created, transactions_to_be_updated)
-	log.Printf("%v rows of %v have been changed", affected_rows_qty, changes_qty)
+	_, err = executeQuery(clusters_to_be_deleted, clusters_to_be_created, transactions_to_be_updated)
 
 	return err
 }
