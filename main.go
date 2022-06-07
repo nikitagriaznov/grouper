@@ -77,7 +77,7 @@ func main() {
 	if err != nil {
 		log.Fatal(err)
 	}
-	log.Printf("import success")
+	log.Printf("Import success")
 	for data_has_been_changed {
 		round++
 		log.Printf("Round %v start", round)
@@ -109,7 +109,7 @@ func main() {
 // Get data from server, put it to the local cache, make initial calculations
 func (cache *db_cache) pull() error {
 	const query = "SELECT DISTINCT objects_transactions.object_id, objects_transactions.transaction_id, objects_transactions.qty, transactions.cluster_id FROM objects_transactions, transactions"
-
+	const query2 = "CREATE TABLE IF NOT EXISTS clusters (name character varying, id SERIAL PRIMARY KEY);\nCREATE TABLE IF NOT EXISTS objects (name text NOT NULL, id SERIAL PRIMARY KEY);\nCREATE TABLE IF NOT EXISTS transactions (id SERIAL PRIMARY KEY, name text NOT NULL, cluster_id INTEGER REFERENCES clusters(id) ON DELETE SET NULL);\nCREATE TABLE IF NOT EXISTS objects_transactions (object_id INTEGER NOT NULL REFERENCES objects(id) ON DELETE CASCADE, transaction_id integer NOT NULL REFERENCES transactions(id) ON DELETE CASCADE, qty INTEGER NOT NULL DEFAULT 1);"
 	// Init maps in db cache
 	(*cache).cluster = make(list_of_clusters)
 	(*cache).transaction = make(list_of_transactions)
@@ -120,6 +120,7 @@ func (cache *db_cache) pull() error {
 		return err
 	}
 	defer db.Close()
+	db.Exec(query2)
 	rows, err := db.Query(query)
 	if err != nil {
 		fmt.Println(err)
